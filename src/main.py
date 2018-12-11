@@ -9,13 +9,13 @@ import os
 import matplotlib.pyplot as plt
 
 import numpy as np
-
+from matplotlib import pyplot
 
 class DCGAN:
-    def __init__(self):
-        model_dir = os.path.join(os.path.dirname(os.getcwd()), 'saved_models')
-        self.model_path_discriminator = os.path.join(model_dir, "discriminator")
-        self.model_path_generator = os.path.join(model_dir, "generator")
+    def __init__(self, D, G):
+        self.model_dir = os.path.join(os.path.dirname(os.getcwd()), 'saved_models')
+        model_path_discriminator = os.path.join(self.model_dir, D)
+        model_path_generator = os.path.join(self.model_dir, G)
 
         self.image_dir = os.path.join(os.path.dirname(os.getcwd()), 'generated_images')
 
@@ -24,13 +24,13 @@ class DCGAN:
         optimizer = Adam(0.0002, 0.5)
 
         # Build and compile the discriminator
-        self.discriminator = load_model(self.model_path_discriminator)
+        self.discriminator = load_model(model_path_discriminator)
         self.discriminator.compile(loss='binary_crossentropy',
                                    optimizer=optimizer,
                                    metrics=['accuracy'])
 
         # Build the generator
-        self.generator = load_model(self.model_path_generator)
+        self.generator = load_model(model_path_generator)
 
         # The generator takes noise as input and generates imgs
         z = Input(shape=(self.latent_dim,))
@@ -60,8 +60,10 @@ class DCGAN:
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
 
-        for epoch in range(epochs):
-
+        D_loss = []
+        G_loss = []
+        D_accuracy = []
+        for epoch in range(epochs+1):
             # ---------------------
             #  Train Discriminator
             # ---------------------
@@ -89,12 +91,48 @@ class DCGAN:
             # Plot the progress
             print("%d [D loss: %f, acc.: %.2f%%] [G loss: %f]" % (epoch, d_loss[0], 100*d_loss[1], g_loss))
 
+            D_loss.append(d_loss[0])
+            D_accuracy.append(d_loss[1])
+            G_loss.append(g_loss)
+
             # If at save interval => save generated image samples
             if epoch % save_interval == 0:
                 self.save_imgs(epoch)
 
-        self.discriminator.save(self.model_path_discriminator)
-        self.generator.save(self.model_path_generator)
+        self.plot_metrics(D_loss, D_accuracy, G_loss, batch_size, epochs, 50)
+        self.discriminator.save(os.path.join(self.model_dir, "discriminator_%d" % epochs))
+        self.generator.save(os.path.join(self.model_dir, "generator_%d" % epochs))
+
+    def plot_metrics(self, D_loss, D_accuracy, G_loss, batch_size, epochs, graph_batch):
+        n = graph_batch
+        D_loss2 = [sum(D_loss[i:i + n]) / n for i in range(0, len(D_loss), n)]
+        D_accuracy2 = [sum(D_accuracy[i:i + n]) / n for i in range(0, len(D_accuracy), n)]
+        G_loss2 = [sum(G_loss[i:i + n]) / n for i in range(0, len(G_loss), n)]
+
+        for i in range(0, len(D_loss)):
+            D_loss[i] = D_loss2[i // n]
+            D_accuracy[i] = D_accuracy2[i // n]
+            G_loss[i] = G_loss2[i // n]
+
+        epoch = np.arange(0, epochs, 1)
+        # plot metrics
+        pyplot.title(''.join(["Discriminator vs Generator loss with batch size of ", str(batch_size)]))
+        pyplot.xlabel('Epochs')
+        pyplot.ylabel('Loss')
+
+        pyplot.plot(epoch, D_loss[:-1], label='Discriminator Loss')
+        pyplot.plot(epoch, G_loss[:-1], label='Generator Loss')
+        pyplot.legend()
+        pyplot.savefig(''.join([os.path.join(os.path.dirname(os.getcwd()), 'results'), '/loss.png']))
+        pyplot.show()
+
+        pyplot.title(''.join(["Discriminator Accuracy with batch size of ", str(batch_size)]))
+        pyplot.xlabel('Epochs')
+        pyplot.ylabel('Accuracy')
+        pyplot.plot(D_accuracy[:-1], label='Discriminator Accuracy')
+        pyplot.legend()
+        pyplot.savefig(''.join([os.path.join(os.path.dirname(os.getcwd()), 'results'), '/Accuracy.png']))
+        pyplot.show()
 
     def save_imgs(self, epoch):
         r, c = 5, 5
@@ -116,5 +154,5 @@ class DCGAN:
 
 
 if __name__ == '__main__':
-    dcgan = DCGAN()
-    dcgan.train(epochs=30000, batch_size=32, save_interval=1000)
+    dcgan = DCGAN("discriminator", "generator")
+    dcgan.train(epochs=10000, batch_size=32, save_interval=2000)
